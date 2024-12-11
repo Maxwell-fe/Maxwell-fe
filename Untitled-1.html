@@ -1,0 +1,135 @@
+ 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  runApp(MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Gerenciador de Eventos',
+      theme: ThemeData(primarySwatch: Colors.blue),
+      home: HomePage(),
+    );
+  }
+}
+
+class HomePage extends StatelessWidget {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text("Eventos"),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.logout),
+            onPressed: () async {
+              await _auth.signOut();
+            },
+          )
+        ],
+      ),
+      body: StreamBuilder(
+        stream: _firestore.collection('eventos').snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return Center(child: CircularProgressIndicator());
+          }
+          final eventos = snapshot.data!.docs;
+          return ListView.builder(
+            itemCount: eventos.length,
+            itemBuilder: (context, index) {
+              final evento = eventos[index];
+              return ListTile(
+                title: Text(evento['nome']),
+                subtitle: Text(evento['descricao']),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EventoDetalhes(evento.id),
+                    ),
+                  );
+                },
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class EventoDetalhes extends StatefulWidget {
+  final String eventoId;
+
+  EventoDetalhes(this.eventoId);
+
+  @override
+  _EventoDetalhesState createState() => _EventoDetalhesState();
+}
+
+class _EventoDetalhesState extends State<EventoDetalhes> {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text("Detalhes do Evento")),
+      body: FutureBuilder(
+        future: _firestore.collection('eventos').doc(widget.eventoId).get(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return Center(child: CircularProgressIndicator());
+          }
+
+          final evento = snapshot.data!;
+          final participantes = evento['participantes'] ?? {};
+          final vai = participantes.values.where((resp) => resp == "vai").length;
+          final naoVai = participantes.values.where((resp) => resp == "não vai").length;
+          final naoRespondeu = participantes.values.where((resp) => resp == "não respondeu").length;
+
+          return Column(
+            children: [
+              Text("Nome: ${evento['nome']}"),
+              Text("Descrição: ${evento['descricao']}"),
+              Text("Local: ${evento['local']}"),
+              Text("Data: ${evento['data'].toDate()}"),
+              SizedBox(height: 20),
+              Text("Vai: $vai"),
+              Text("Não vai: $naoVai"),
+              Text("Não respondeu: $naoRespondeu"),
+              SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () async {
+                  await _firestore.collection('eventos').doc(widget.eventoId).update({
+                    'participantes.${_auth.currentUser!.uid}': "vai",
+                  });
+                },
+                child: Text("Confirmar Presença"),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  await _firestore.collection('eventos').doc(widget.eventoId).update({
+                    'participantes.${_auth.currentUser!.uid}': "não vai",
+                  });
+                },
+                child: Text("Recusar Presença"),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
